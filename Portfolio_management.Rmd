@@ -20,8 +20,8 @@ library(latex2exp)
 
 ```
 
-```{r}
-df = read_excel("data/companies_returns.xlsx", sheet = "data") 
+```{r, echo = FALSE, warning = FALSE}
+df = suppressMessages(read_excel("data/companies_returns.xlsx", sheet = "data"))
 no_date_stock = df[2:6]
 ```
 
