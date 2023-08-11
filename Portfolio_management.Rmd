@@ -1,0 +1,389 @@
+---
+title: "Portfolio Management"
+author: "Linh"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r, message=FALSE}
+library(IntroCompFinR)
+library(dplyr)
+library(plotly)
+library(readxl)
+library(moments)
+library(kableExtra)
+library(gridExtra)
+library(magick)
+library(knitr)
+library(kableExtra)
+library(magrittr)
+library(latex2exp)
+
+```
+
+```{r}
+df = read_excel("data/companies_returns.xlsx", sheet = "data") 
+no_date_stock = df[2:6]
+```
+
+```{r}
+df_returns = read_excel("data/companies_returns.xlsx", sheet = "Cum. Returns") 
+df_returns = df_returns[8:13]
+colnames(df_returns) = c("date", "XOM", "NKE", "AMZN", "GS", "V")
+df_returns$date <- as.Date(df_returns$date, format = "%Y-%m-%d")
+```
+
+```{r, fig.width=14, fig.height=6}
+
+palette = c(`XOM` = "#5ad45a" , `NKE` = "#ffa300", AMZN = "purple", GS = 'red', V = "#00B6EB")
+
+ggplot(df_returns, aes(date)) + 
+  geom_line(aes(y = XOM, color = "XOM")) + 
+  geom_line(aes(y = NKE, colour = "NKE"))  + 
+  geom_line(aes(y = AMZN, colour = "AMZN")) + 
+  geom_line(aes(y = GS, colour = "GS")) + 
+  geom_line(aes(y = V, colour = "V")) +   labs(x = "Year", y = "Dollars ($)", color = "Stocks") +ggtitle("Graph 1: Cumulative Returns from $1 in different stocks") + theme_bw() + scale_x_date(date_breaks = "1 year", date_labels = "%Y") + scale_y_continuous(expand = c(0, 0), limits = c(0, 30)) + theme(text = element_text(family = "Times New Roman")) + theme(legend.position = "right", plot.title = element_text(size = 20, face = "bold", hjust = -0.09, vjust=2.12), legend.text=element_text(size=18), axis.title=element_text(size=18), axis.text=element_text(size=18), legend.title=element_text(size=20, , face = "bold")) + scale_color_manual(values = palette)
+
+
+```
+
+
+```{r}
+rf = 2
+monthly_mean = colMeans(no_date_stock) 
+
+annual_mean = round(monthly_mean *12 *100,2)
+
+# Calculate the standard deviation of each column
+
+monthly_sd = apply(no_date_stock, 2, sd)
+annual_sd = round(monthly_sd*sqrt(12)*100,2)
+
+annual_sharpe_ratio = ((annual_mean - rf)/annual_sd)
+annual_sharpe_ratio = format(round(annual_sharpe_ratio, 2), nsmall = 2)
+annual_mean = format(round(annual_mean, 2), nsmall = 2)
+
+# skewness = apply(no_date_stock, 2, skewness) 
+# skewness = format(round(skewness, 2), nsmall = 2)
+skewness = c(0.39, -0.29, 0.30, 0.10, -0.23)
+skewness = format(round(skewness, 2), nsmall = 2)
+
+stats = matrix(colnames(no_date_stock)) %>% t()
+stats = stats %>% rbind(annual_mean, annual_sd, annual_sharpe_ratio, skewness) 
+rownames(stats) = c("", "Annualised Mean (%)", "Annualised Standard Deviation (%)", 'Annualised Sharpe Ratio', 'Skewness')
+stats = stats[-1,]
+stats %>% t() %>%
+  kbl(caption = "**Table 1: Risk Return Characteristics**", font_size = 24) %>%
+  kable_classic_2(full_width = T, html_font = "Times New Roman", font_size = 18)
+```
+
+
+```{r}
+asset.names <- c("XOM", "NKE", "AMZN",	"GS", 	"V")
+er <- c(0.105866952,	0.192890905,	0.240275518,	0.113158835,	0.201989952)
+names(er) <- asset.names
+covmat <- matrix(c(0.060338487,	0.01407903,	0.013005838,	0.036895633,	0.022801883,0.01407903,	0.058231084,	0.024578049,	0.030143019,	0.021494132,
+0.013005838,	0.024578049,	0.091272712,	0.027327922,	0.025398346,
+0.036895633,	0.030143019,	0.027327922,	0.085654195,	0.025295018,
+0.022801883,	0.021494132,	0.025398346,	0.025295018,	0.04085999),nrow=5, ncol=5)
+r.free <- 0.02
+dimnames(covmat) <- list(asset.names, asset.names)
+ew = rep(1,5)/5
+
+
+```
+
+```{r, fig.width= 14}
+covmat %>%
+  kbl(caption = "**Table 2: Variance and Covaraince Matrix**", font_size = 24) %>%
+  kable_classic_2(full_width = T, html_font = "Times New Roman", font_size = 18)
+```
+
+```{r}
+equalWeight.portfolio = getPortfolio(er=er,cov.mat=covmat,weights=ew)
+# tangency portfolio
+tan.port <- tangency.portfolio(er, covmat, r.free)
+sr.tan = (tan.port$er - r.free)/tan.port$sd
+
+# compute global minimum variance portfolio
+gmin.port = globalMin.portfolio(er, covmat)
+
+
+# compute portfolio frontier
+ef <- efficient.frontier(er, covmat, alpha.min=-2,
+                         alpha.max=2, nport=500)
+ef_df = matrix(ncol = 2)
+ef_df = cbind(ef$er, ef$sd)
+colnames(ef_df) = c("Er", "Sd")
+ef_df = ef_df %>% as.data.frame()
+
+```
+
+
+```{r}
+stock_df <- data.frame(Sd = c(0.246430045,	0.242088349,	0.303086734,	0.293609951,	0.202789553, tan.port$sd, gmin.port$sd), Er = c(0.105866952,	0.192890905,	0.240275518,	0.113158835,	0.201989952, tan.port$er, gmin.port$er), Portfolios = c("100% XOM Portfolio", "100% NKE Portfolio", "100% AMZN Portfolio",	"100% GS Portfolio", "100% V Portfolio", "Tangency Portfolio", "Minimum Variance Portfolio"))
+
+stock_wo_rf = data.frame(Sd = c(0.246430045,	0.242088349,	0.303086734,	0.293609951,	0.202789553, gmin.port$sd), Er = c(0.105866952,	0.192890905,	0.240275518,	0.113158835,	0.201989952, gmin.port$er), Portfolios = c("100% XOM Portfolio", "100% NKE Portfolio", "100% AMZN Portfolio",	"100% GS Portfolio", "100% V Portfolio", "Minimum Variance Portfolio"))
+
+```
+
+```{r, fig.width=14, fig.height= 6}
+
+palette = c(`100% XOM Portfolio` = "#5ad45a" , `100% NKE Portfolio` = "#ffa300", `100% AMZN Portfolio` = "purple", `100% GS Portfolio` = 'red', `100% V Portfolio` = "#00B6EB", `Minimum Variance Portfolio` = "#4421af", `Tangency Portfolio` = "#FB61D7")
+
+
+ p = ggplot() + 
+  geom_point(data = ef_df, aes(x=Sd, y=Er), color = "grey28", size = 0.05) +
+  geom_point(data = stock_df, aes(x = Sd, y = Er, color = Portfolios), size = 2.5)  + 
+  geom_abline(intercept=0.02, slope=sr.tan, linetype = "dashed")+ scale_x_continuous(expand = c(0, 0), limits = c(0, 0.5)) + annotate("text", x=0.30, y=0.37, label="Optimal \n CAL", size = 5.5, family = "Times New Roman") + annotate("text", x=0.04, y=0.02, label= TeX("$R_f = 0.02$", output='character'), size = 5.5, family = "Times New Roman", parse=TRUE) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 0.4)) + ylab("Annual Expected Portfolio Returns") + xlab("Annual Risk (Standard Deviation)") + ggtitle("Graph 3: Efficient Frontier With Risk-Free Asset") + theme_bw() + theme(text = element_text(family = "Times New Roman")) + theme(legend.position = "right", plot.title = element_text(size = 20, face = "bold", hjust = -0.13, vjust=2.12), legend.text=element_text(size=18), axis.title=element_text(size=18), axis.text=element_text(size=18), legend.title=element_text(size=20, , face = "bold")) + scale_colour_manual(values = palette)
+
+
+p
+```
+
+```{r, fig.width=14, fig.height=6}
+
+p1 = ggplot() + 
+  geom_point(data = ef_df, aes(x=Sd, y=Er), color = "grey28", size = 0.05) +
+  geom_point(data = stock_wo_rf, aes(x = Sd, y = Er, color = Portfolios), size = 2.5)  + scale_x_continuous(expand = c(0, 0), limits = c(0, 0.5)) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 0.4)) + ylab("Annual Expected Portfolio Returns") + xlab("Annual Risk (Standard Deviation)") + ggtitle("Graph 2: Efficient Frontier Without Risk-Free Asset") + theme_bw() + theme(text = element_text(family = "Times New Roman")) + theme(legend.position = "right", plot.title = element_text(size = 20, face = "bold", hjust = -0.13, vjust=2.12), legend.text=element_text(size=18), axis.title=element_text(size=18), axis.text=element_text(size=18), legend.title=element_text(size=20, , face = "bold")) + scale_colour_manual(values = palette)
+    
+
+p1
+
+```
+
+
+
+```{r, fig.width= 14}
+tan_weights = round(100 * tan.port$weights,2)
+tan_weights = tan_weights %>% as.data.frame() %>% t()
+rownames(tan_weights) = c("Tangency Portfolio")
+tan_sharpe = (tan.port$er-0.02)/tan.port$sd
+risk_return = cbind(round(tan.port$er*100,2), round(tan.port$sd*100, 2), round(tan_sharpe, 2))
+
+tan_weights = tan_weights %>% cbind(risk_return)
+colnames(tan_weights) = c("XOM", "NKE", "AMZN",	"GS", "V", "Expected Return (%)", "Standard Deviation (%)", "Sharpe Ratio")
+
+tan_weights
+tan_weights %>%
+  kbl(caption = "**Table 3: Tangent Portfolio**", font_size = 24) %>%
+  kable_classic_2(full_width = T, html_font = "Times New Roman", font_size = 18) %>%
+  add_header_above(c(" ", "Weights (%)" = 5, "Risks/Returns" = 3))
+```
+
+
+```{r}
+#Same return, lower risk
+port1 = c(-9.31,	32.43,	29.62,	-23.58,	70.83, 24.03, 21.29, 1.03)
+#Same risk, higher return
+port2 = c(-44.59,	38.69,	47.43,	-45.74, 104.21, 30.01, 30.31, 0.92)
+amazon = c(0,0,100,0,0,24.03,30.31, 0.73)
+#Higher return, lower risk
+port3 = c(-29.05,	35.96,	39.61,	-35.96, 89.44, 27.37, 26.00, 0.98)
+
+port_df = rbind(amazon, port1, port2, port3)
+colnames(port_df) = c("XOM", "NKE", "AMZN",	"GS", "V", "Expected Return (%)", "Standard Deviation (%)", "Sharpe Ratio")
+rownames(port_df) = c("Amazon Only Stocks", "Same Returns, Lower Risk", "Higher Returns, Same Risk", "Higher Returns, Lower Risks")
+port_df %>%
+  kbl(caption = "**Table 4: Types of Portfolios**", font_size = 22) %>% 
+  kable_classic_2(full_width = T, html_font = "Times New Roman Bold", font_size = 18) %>%
+  add_header_above(c(" ", "Weights (%)" = 5, "Risks/Returns" = 3)) 
+
+```
+
+```{r}
+port_df %>% kbl(format = 'html',
+escape = FALSE,
+caption = "**Table 4: Types of Portfolios**") %>%
+kable_styling(font_size = 14) %>%
+gsub("font-size: initial !important;",
+"font-size: 45pt !important;",
+.)  %>% 
+  kable_classic_2(full_width = T, html_font = "Times New Roman Bold", font_size = 18) %>%
+  add_header_above(c(" ", "Weights (%)" = 5, "Risks/Returns" = 3)) 
+```
+
+```{r}
+tan.port$weights
+p_mu = tan.port$er
+p_sd = tan.port$sd
+p_var = p_sd^2
+
+weight_tanport8 = (p_mu-0.02)/(8*p_sd^2) *100
+weight_tanport8
+weight_rf_8 = 100-weight_tanport8
+
+u8_er = ((weight_tanport8*p_mu)+(weight_rf_8*0.02)) / 100
+u8_sd = (weight_tanport8*p_sd)/100
+u8_sharpe = (u8_er-0.02)/u8_sd
+u8_sharpe
+
+weight_tanport12 = (p_mu-0.02)/(12*p_sd^2) *100
+weight_rf_12 = 100-weight_tanport12
+
+u12_er = ((weight_tanport12*p_mu)+(weight_rf_12*0.02))/100
+u12_sd = weight_tanport12*p_sd / 100
+u12_sharpe = (u12_er-0.02)/u12_sd
+
+
+u_df8 = cbind(u8_er, u8_sd, u8_sharpe)
+u_df8 = format(round(u_df8, 2), nsmall = 2)
+u_df12 = cbind(u12_er, u12_sd, u12_sharpe)
+u_df12 = format(round(u_df12, 2), nsmall = 2)
+
+u_df = rbind(u_df8, u_df12) %>% as.data.frame()
+u_df= u_df %>% cbind(c("A=8", "A=12"))
+colnames(u_df) = c("Er", "Sd", "Sharpe", "A")
+
+
+```
+
+
+```{r}
+money = 2000000
+tan_weights = tan.port$weights /100
+
+scale_factor_8 = 1/weight_tanport8
+mod_weights_8 <- tan_weights/scale_factor_8
+mod_weights_8 = mod_weights_8 %>% c(weight_rf_8/100)
+money_allocation_8 = format(round(mod_weights_8*money, 2), nsmall = 2)
+
+
+scale_factor_12 = 1/weight_tanport12
+mod_weights_12 <- tan_weights/scale_factor_12
+mod_weights_12 = mod_weights_12 %>% c(weight_rf_12/100)
+money_allocation_12 = format(round(mod_weights_12*money, 2), nsmall = 2)
+
+rbind(mod_weights_8*100,mod_weights_12*100)
+```
+
+```{r}
+stats_allocation_8 = money_allocation_8 %>% c(u_df8)
+stats_allocation_12 = money_allocation_12 %>% c(u_df12)
+stats_allocation = rbind(stats_allocation_8, stats_allocation_12)
+stats_allocation = stats_allocation %>% as.data.frame()
+
+colnames(stats_allocation) = c("XOM", "NKE", "AMZN",	"GS", "V", "Risk-Free", "Expected Return (%)", "Standard Deviation (%)", "Sharpe Ratio")
+rownames(stats_allocation) = c("Tom", "Amy")
+stats_allocation %>%
+  kbl(caption = "**Table 5: Investors Risk Aversion**", font_size = 18) %>%
+  kable_classic_2(full_width = T, html_font = "Times New Roman", font_size = 18) %>%
+  add_header_above(c(" ", "Money Allocation ($)" = 6, "Risks/Returns" = 3))
+```
+
+```{r}
+tan.port_ns <- tangency.portfolio(er, covmat, r.free, shorts = FALSE)
+p_mu = tan.port_ns$er
+p_sd = tan.port_ns$sd
+
+weight_tanport8 = (p_mu-0.02)/(8*p_sd^2) *100
+weight_rf_8 = 100-weight_tanport8
+u8_er = (weight_tanport8*p_mu)+(weight_rf_8*0.02)
+u8_sd = weight_tanport8*p_sd
+u8_sharpe = (u8_er-0.02)/u8_sd
+
+weight_tanport12 = (p_mu-0.02)/(12*p_sd^2) *100
+weight_rf_12 = 100-weight_tanport12
+u12_er = (weight_tanport12*p_mu)+(weight_rf_12*0.02)
+u12_sd = weight_tanport12*p_sd
+u12_sharpe = (u12_er-0.02)/u12_sd
+
+
+u_df8 = cbind(u8_er, u8_sd, u8_sharpe)
+u_df8 = format(round(u_df8, 2), nsmall = 2)
+u_df12 = cbind(u12_er, u12_sd, u12_sharpe)
+u_df12 = format(round(u_df12, 2), nsmall = 2)
+
+u_df = rbind(u_df8, u_df12) %>% as.data.frame()
+u_df= u_df %>% cbind(c("A=8", "A=12"))
+colnames(u_df) = c("Er", "Sd", "Sharpe", "A")
+
+```
+
+```{r}
+ratio = c("60.00", "40.00", "50.00", "50.00", "32.58", "68.42", "43.75", "56.25", "42.11", "57.89", "21.05", "78.95") %>% matrix(byrow = TRUE, ncol = 2)
+ratio = ratio %>% as.data.frame()
+rownames(ratio) = c("Conservative ", "Moderate ", "Aggressive ", "Conservative", "Moderate", "Aggressive")
+colnames(ratio) = c("Bond weight in risky portfolio (%)", "Equity weight in risky portfolio (%)")
+
+ratio %>%
+  kbl(caption = "**Table 6: Weight distribution in risky portfolio**", font_size = 18) %>%
+  kable_classic_2(full_width = T, html_font = "Times New Roman", font_size = 18) %>%
+  pack_rows(index = c("Blackrock" = 3, "Charles Schwab" = 3))
+```
+
+```{r}
+tan.port_stats = c(tan.port$er, tan.port$sd)
+safe_port = c((0.5*tan.port$er)+(0.5*0.02), 0.5*tan.port$sd)
+safe_port = c((0.5*tan.port$er)+(0.5*0.02), 0.5*tan.port$sd)
+safe_port_2 = c((0.95*tan.port$er)+(0.05*0.02), 0.95*tan.port$sd)
+risk_port = c((1.5*tan.port$er)+(-0.5*0.02), 1.5*tan.port$sd)
+cal_port = rbind(tan.port_stats, safe_port, safe_port_2, risk_port) %>% as.data.frame()
+colnames(cal_port) = c( "er", "sd")
+
+```
+
+```{r, fig.width= 14, fig.height=6}
+ p = ggplot() + 
+  geom_point(data = ef_df, aes(x=Sd, y=Er), color = "grey28", size = 0.05) +
+   geom_point(data = cal_port, aes(x = sd, y = er), size = 2.5)  + 
+  geom_abline(intercept=0.02, slope=sr.tan, linetype = "dashed")+ scale_x_continuous(expand = c(0, 0), limits = c(0, 0.45)) +  annotate("text", x=0.04, y=0.02, label= TeX("$R_f = 0.02$", output='character'), size = 5.5, family = "Times New Roman", parse=TRUE) + annotate("text", x=0.09662417	, y=0.15, label= "50% 50% \nSafe" , size = 5.5, family = "Times New Roman") + annotate("text", x=0.145, y=0.23, label= "5% 95% \nModerately Safe" , size = 5.5, family = "Times New Roman")+  annotate("text", x=0.23, y=0.22, label= "Tangency Portfolio" , size = 5.5, family = "Times New Roman")+ annotate("text", x=0.27, y=0.34, label= "-50% 150% \nRisky" , size = 5.5, family = "Times New Roman")+
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 0.4)) + ylab("Annual Expected Portfolio Returns") + xlab("Annual Risk (Standard Deviation)") + ggtitle("Graph 6: Two fund theroem between risky and risk-free assets") + theme_bw() + theme(text = element_text(family = "Times New Roman")) + theme(legend.position = "right", plot.title = element_text(size = 20, face = "bold", hjust = -0.06, vjust=2.12), legend.text=element_text(size=18), axis.title=element_text(size=18), axis.text=element_text(size=18), legend.title=element_text(size=20, , face = "bold")) + scale_colour_manual(values = palette) + labs(caption = "*Graph is under the assumption that the Blackrock and Charles Schwab portfolios uses the optimal risky portfolio ") +
+  theme(plot.caption = element_text(hjust=-0.06, size = 16, vjust = -0.1))
+p
+
+```
+
+```{r}
+
+r.f = 0.02
+
+# short sales restricted portfolios
+gmin.port.ns = globalMin.portfolio(er, covmat, shorts=FALSE) 
+tan.port.ns = tangency.portfolio(er, covmat, r.f, shorts=FALSE) 
+ef.ns = efficient.frontier(er, covmat, alpha.min=-3,                                                   
+                           alpha.max=3, nport=500, shorts=FALSE)
+
+sr.tan.ns = (tan.port.ns$er - r.free)/tan.port.ns$sd
+
+
+# compute portfolio frontier
+
+ef.ns_df = matrix(ncol = 2)
+ef.ns_df = cbind(ef.ns$er, ef.ns$sd)
+colnames(ef.ns_df) = c("Er", "Sd")
+ef.ns_df = ef.ns_df %>% as.data.frame()
+
+```
+
+```{r, fig.height=6, fig.width=14}
+
+ p1 = ggplot() + 
+  geom_point(data = ef_df, aes(x=Sd, y=Er), color = "#F8766D", size = 0.05) +
+  geom_point(data = ef.ns_df, aes(x=Sd, y=Er), color = "#619CFF", size = 0.05) + scale_x_continuous(expand = c(0, 0), limits = c(0, 0.45)) + 
+  geom_abline(intercept=0.02, slope=sr.tan, linetype = "dashed", color = "#F8766D") + geom_abline(intercept=0.02, slope=sr.tan.ns, linetype = "dashed", color = "#619CFF") +  annotate("text", x=0.4	, y=0.37, label= "With Shorting" , size = 5.5, family = "Times New Roman", color = "#F8766D") + annotate("text", x=0.3	, y=0.25, label= "Without Shorting" , size = 5.5, family = "Times New Roman", color = "#619CFF") +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 0.4)) + ylab("Annual Expected Portfolio Returns") + xlab("Annual Risk (Standard Deviation)") + ggtitle("Graph 5: Efficient Frontier with and without shorting") + theme_bw() + theme(text = element_text(family = "Times New Roman")) + theme(legend.position = "right", plot.title = element_text(size = 20, face = "bold", hjust = -0.09, vjust=2.12), legend.text=element_text(size=18), axis.title=element_text(size=18), axis.text=element_text(size=18), legend.title=element_text(size=20, , face = "bold")) + annotate("text", x=0.04, y=0.02, label= TeX("$R_f = 0.02$", output='character'), size = 5.5, family = "Times New Roman", parse=TRUE) 
+
+p1
+
+```
+
+```{r, fig.width= 16, fig.height=6}
+port_df = port_df %>% as.data.frame()
+port_df
+names = c("Amazon Only Stocks", "Same Returns, Lower Risk", "Higher Returns, Same Risk", "Higher Returns, Lower Risks")
+port_df$names = names
+port_df
+
+ p = ggplot() + 
+  geom_point(data = ef_df, aes(x=Sd, y=Er), color = "grey28", size = 0.05) +
+  geom_point(data = port_df, aes(x =`Standard Deviation (%)`/100, y = `Expected Return (%)`/100, color = names), size = 2.5)+ scale_x_continuous(expand = c(0, 0), limits = c(0, 0.5))+
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 0.4)) + ylab("Annual Expected Portfolio Returns") + xlab("Annual Risk (Standard Deviation)") + ggtitle("Graph 4: Portfolio diversification") + theme_bw() + theme(text = element_text(family = "Times New Roman")) + theme(legend.position = "right", plot.title = element_text(size = 20, face = "bold", hjust = -0.09, vjust=2.12), legend.text=element_text(size=18), axis.title=element_text(size=18), axis.text=element_text(size=18), legend.title=element_text(size=20, , face = "bold")) 
+ 
+p
+```
+
+
+
+
