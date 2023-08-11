@@ -2,11 +2,7 @@
 title: "Portfolio Management"
 author: "Linh"
 date: "`r Sys.Date()`"
-format: 
-  html: 
-    self-contained: true # Creates a single HTML file as output
-    code-fold: true # Code folding; allows you to show/hide code chunks
-    code-tools: true # Includes a menu to download the code file
+output: html_document
 ---
 ```{r, message=FALSE}
 library(IntroCompFinR)
